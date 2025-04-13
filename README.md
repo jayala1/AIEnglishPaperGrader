@@ -1,3 +1,8 @@
+![image](https://github.com/user-attachments/assets/b6ac3aba-0be1-4ec2-8501-63e997174e12)
+
+
+
+
 🚀 Features
 Upload .txt essays for analysis
 
