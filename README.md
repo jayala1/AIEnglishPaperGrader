@@ -20,11 +20,11 @@ Ollama-compatible model (e.g., llama3.1:8b-instruct-q5_K_M)
 
 WeasyPrint (for generating PDF reports)
 
-🔧 Installation
-Download to a folder
-open terminal or cmd for that folder location
-create python enviorment
-pip install fastapi requests weasyprint uvicorn python-multipart
+🔧 Installation<br>
+Download to a folder<br>
+open terminal or cmd for that folder location<br>
+create python enviorment<br>
+pip install fastapi requests weasyprint uvicorn python-multipart<br>
 
-▶️ Run the App
-uvicorn main6:app --reload
+▶️ Run the App<br>
+uvicorn main6:app --reload<br>
