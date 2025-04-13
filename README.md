@@ -12,7 +12,7 @@ Inline feedback comments from AI
 
 Rubric-based scoring and overall grade
 
-Teacher-mode annotation tools
+Teacher-mode annotation tools(highlight a part of the text and a pop up will open to insert comment and save. If you hover it will show the comment. If you want to embed teacher comment press the embed teacher comment).
 
 Download annotated PDF report
 
