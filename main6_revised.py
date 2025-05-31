@@ -104,14 +104,43 @@ def index():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
-mark { background-color: #ffff66; }
-.teacher-annotation { background-color: #99d0ff; cursor: pointer; }
+mark {
+  background-color: #e6e6fa; /* Light lavender for AI comments */
+  padding: 0.1em 0.3em;      /* Padding around AI comments */
+  border-radius: 3px;       /* Rounded corners for AI comments */
+}
+.teacher-annotation {
+  /* background-color: #99d0ff; */ /* Removed background color */
+  border-bottom: 2px dotted #007bff; /* Dotted blue underline */
+  cursor: pointer; /* Or cursor: help; */
+}
 #annotate-menu {
-  position: absolute; display: none; background: #fff; border: 1px solid #ccc; padding: 5px; z-index: 1000;
+  position: absolute;
+  display: none;
+  background-color: #f8f9fa; /* Softer background */
+  border: 1px solid #ced4da; /* Subtle border */
+  border-radius: 0.25rem; /* Bootstrap default border-radius */
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); /* Bootstrap default shadow */
+  padding: 0.5rem; /* More spacious padding */
+  z-index: 1000;
+}
+#annotate-menu textarea#comment-input { /* Style the textarea within the menu */
+  min-width: 180px; /* Flexible width */
+  min-height: 60px; /* Flexible height */
+  border: 1px solid #ced4da;
+  border-radius: 0.25rem;
+  padding: 0.375rem 0.75rem;
+  margin-bottom: 0.5rem; /* Space before buttons */
+  width: 100%; /* Make it take full width of its parent */
+  box-sizing: border-box; /* Ensure padding and border don't increase overall size */
+}
+#annotate-menu button.btn-secondary {
+  margin-left: 0.25rem; /* Space between buttons */
 }
 #annotated {
   white-space: pre-wrap; word-break: break-word; background:#f9f9f9;
   padding:1rem; border:1px solid #ddd; max-height:70vh; overflow-y:auto;
+  line-height: 1.6; /* Increased line height for readability */
 }
 #original {
   white-space: pre-wrap; word-break: break-word; background:#f9f9f9;
@@ -245,9 +274,11 @@ textarea { width: 100%; }
     <button onclick="flattenTeacherComments()" class="btn btn-outline-primary mb-2">Embed Teacher Comments Inline</button>
     <div id="annotated" contenteditable="true"></div>
     <div id="annotate-menu">
-      <textarea id="comment-input" placeholder="Add comment..." style="width:150px; height:50px;"></textarea><br>
-      <button onclick="saveAnnotation()" class="btn btn-sm btn-primary">Save</button>
-      <button onclick="hideMenu()" class="btn btn-sm btn-secondary">Cancel</button>
+      <textarea id="comment-input" placeholder="Add comment..."></textarea>
+      <div> <!-- Wrapper for buttons to sit below textarea -->
+        <button onclick="saveAnnotation()" class="btn btn-sm btn-primary">Save</button>
+        <button onclick="hideMenu()" class="btn btn-sm btn-secondary">Cancel</button>
+      </div>
     </div>
   </div>
 </div>
@@ -508,13 +539,52 @@ document.getElementById('annotated').addEventListener('mouseup',e=>{
 
   selectedRange=sel.getRangeAt(0).cloneRange();
   const menu=document.getElementById('annotate-menu');
+
+  // Set display to block to measure dimensions, but make it invisible initially for smoother appearance
+  menu.style.visibility = 'hidden';
   menu.style.display='block';
   document.getElementById('comment-input').value='';
-  document.getElementById('comment-input').focus(); // Focus the input field
+  // Don't focus yet, until position is calculated
 
-  // Position menu relative to the viewport/document
-  menu.style.left=e.pageX+'px';
-  menu.style.top=e.pageY+'px';
+  let menuHeight = menu.offsetHeight; // Get height after display:block
+  let menuWidth = menu.offsetWidth; // Get width after display:block
+
+  // Attempt to position menu above and slightly to the right of the cursor initially
+  let top = e.pageY - menuHeight - 5; // 5px offset above (menu bottom is 5px above cursor)
+  let left = e.pageX + 5;             // 5px offset to the right of the cursor
+
+  // Boundary checks to keep menu within viewport
+  const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+  const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+  // If menu goes off top, try to position it below the cursor
+  if (top < scrollY) {
+    top = e.pageY + 15; // Place below cursor (15px offset)
+  }
+
+  // If menu goes off right, adjust left to keep it in viewport
+  if (left + menuWidth > scrollX + viewportWidth) {
+    left = scrollX + viewportWidth - menuWidth - 5; // 5px padding from right edge
+  }
+  // If menu goes off left (e.g., if it was flipped to below and cursor is far left), adjust left
+  if (left < scrollX) {
+    left = scrollX + 5; // 5px padding from left edge
+  }
+  // If menu goes off bottom (especially if it was flipped below cursor), adjust top
+  if (top + menuHeight > scrollY + viewportHeight) {
+      top = scrollY + viewportHeight - menuHeight - 5; // 5px padding from bottom edge
+  }
+  // A final check if after all adjustments, it's still too high (e.g. very tall menu in short viewport)
+  if (top < scrollY) {
+      top = scrollY + 5; // 5px padding from top edge
+  }
+
+  menu.style.left=left+'px';
+  menu.style.top=top+'px';
+  menu.style.visibility = 'visible'; // Make it visible after positioning
+  document.getElementById('comment-input').focus(); // Focus the input field now
 });
 
 // Hide menu if clicking elsewhere
