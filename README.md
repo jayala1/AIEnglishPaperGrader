@@ -17,6 +17,8 @@ Teacher-mode annotation tools(highlight a part of the text and a pop up will ope
 
 Download annotated PDF report
 
+- **Preset Management:** Save and load common grading configurations (including Ollama settings, AI tone, strictness, rubric, criteria, weights, and instructions) using browser local storage.
+
 🛠 Requirements
 Python 3.9+
 

@@ -182,6 +182,23 @@ textarea { width: 100%; }
       </div>
       <!-- End Ollama Server Configuration -->
 
+      <!-- Preset Management Card -->
+      <div class="card mb-3 p-2">
+        <label class="form-label fw-bold">Preset Management</label>
+        <div class="input-group mb-2">
+          <input type="text" id="preset-name" class="form-control" placeholder="Preset Name">
+        </div>
+        <button type="button" id="save-preset-btn" class="btn btn-success btn-sm w-100 mb-2">Save Current Settings as Preset</button>
+        <div class="input-group mb-2">
+          <select id="load-preset-select" class="form-select">
+            <option value="">-- Load Preset --</option>
+          </select>
+        </div>
+        <button type="button" id="delete-preset-btn" class="btn btn-danger btn-sm w-100 mb-2">Delete Selected Preset</button>
+        <div id="preset-feedback" class="text-muted mt-1" style="font-size: 0.8em;"></div>
+      </div>
+      <!-- End Preset Management Card -->
+
       <div class="mb-3">
         <label class="form-label">Upload Essay</label>
         <input type="file" name="file" class="form-control" accept=".txt" required>
@@ -297,6 +314,14 @@ const modelFetchErrorDiv = document.getElementById('model-fetch-error');
 const analyzeErrorDiv = document.getElementById('analyze-error');
 const spinner = document.getElementById('spinner');
 const uploadForm = document.getElementById('upload-form');
+
+// Preset Management Elements
+const presetNameInput = document.getElementById('preset-name');
+const savePresetBtn = document.getElementById('save-preset-btn');
+const loadPresetSelect = document.getElementById('load-preset-select');
+const deletePresetBtn = document.getElementById('delete-preset-btn');
+const presetFeedbackDiv = document.getElementById('preset-feedback');
+
 
 // --- Fetch Ollama Models ---
 fetchModelsBtn.addEventListener('click', async () => {
@@ -500,7 +525,145 @@ function updateWeightTotal() {
 document.querySelectorAll('input[name="criteria"]').forEach(cb => cb.onchange=updateWeightVisibility);
 document.querySelectorAll('#weights-container input[type=number]').forEach(i => i.oninput=updateWeightTotal);
 
-window.onload=updateWeightVisibility; // Initialize weights visibility and total
+window.onload = function() {
+    updateWeightVisibility();
+    loadPresetList(); // Add this call
+};
+
+// --- Preset Management Functions ---
+function savePreset() {
+  const presetName = presetNameInput.value.trim();
+  if (!presetName) {
+    presetFeedbackDiv.textContent = 'Please enter a preset name.';
+    presetFeedbackDiv.className = 'text-danger mt-1';
+    return;
+  }
+
+  const criteriaChecked = [];
+  document.querySelectorAll('input[name="criteria"]:checked').forEach(cb => criteriaChecked.push(cb.value));
+
+  const settings = {
+    ollamaUrl: ollamaUrlInput.value,
+    ollamaModel: ollamaModelSelect.value,
+    tone: document.getElementById('tone').value,
+    strictness: document.getElementById('strictness').value,
+    rubricPreset: document.getElementById('preset').value, // Rubric preset (AP, IELTS)
+    gradeLevel: document.getElementById('grade_level').value,
+    criteria: criteriaChecked,
+    weight_grammar: document.querySelector('input[name="weight_grammar"]').value,
+    weight_vocabulary: document.querySelector('input[name="weight_vocabulary"]').value,
+    weight_coherence: document.querySelector('input[name="weight_coherence"]').value,
+    weight_spelling: document.querySelector('input[name="weight_spelling"]').value,
+    weight_structure: document.querySelector('input[name="weight_structure"]').value,
+    instructions: document.querySelector('textarea[name="instructions"]').value
+  };
+
+  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
+  presets[presetName] = settings;
+  localStorage.setItem('gradingPresets', JSON.stringify(presets));
+
+  presetFeedbackDiv.textContent = `Preset "${presetName}" saved!`;
+  presetFeedbackDiv.className = 'text-success mt-1';
+  loadPresetList();
+  presetNameInput.value = '';
+}
+
+function loadPresetList() {
+  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
+  loadPresetSelect.innerHTML = '<option value="">-- Load Preset --</option>'; // Clear existing options
+
+  for (const name in presets) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    loadPresetSelect.appendChild(option);
+  }
+}
+
+function applyPreset() {
+  const selectedPresetName = loadPresetSelect.value;
+  if (!selectedPresetName) return;
+
+  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
+  const settings = presets[selectedPresetName];
+
+  if (!settings) {
+    presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" not found.`;
+    presetFeedbackDiv.className = 'text-danger mt-1';
+    return;
+  }
+
+  ollamaUrlInput.value = settings.ollamaUrl || 'http://localhost:11434'; // Default if not set
+
+  // Set model value. If the model isn't in the list, this will select nothing,
+  // or user can manually fetch.
+  ollamaModelSelect.value = settings.ollamaModel || "";
+
+
+  document.getElementById('tone').value = settings.tone;
+  document.getElementById('strictness').value = settings.strictness;
+  document.getElementById('preset').value = settings.rubricPreset;
+  // Manually trigger change for rubric preset to update criteria/weights based on its own logic first
+  document.getElementById('preset').dispatchEvent(new Event('change'));
+
+  document.getElementById('grade_level').value = settings.gradeLevel;
+
+  // Uncheck all criteria first
+  document.querySelectorAll('input[name="criteria"]').forEach(cb => cb.checked = false);
+  // Check saved criteria
+  if (settings.criteria && Array.isArray(settings.criteria)) {
+    settings.criteria.forEach(criterionValue => {
+      const cb = document.querySelector(`input[name="criteria"][value="${criterionValue}"]`);
+      if (cb) cb.checked = true;
+    });
+  }
+
+  // Apply weights
+  document.querySelector('input[name="weight_grammar"]').value = settings.weight_grammar || 0;
+  document.querySelector('input[name="weight_vocabulary"]').value = settings.weight_vocabulary || 0;
+  document.querySelector('input[name="weight_coherence"]').value = settings.weight_coherence || 0;
+  document.querySelector('input[name="weight_spelling"]').value = settings.weight_spelling || 0;
+  document.querySelector('input[name="weight_structure"]').value = settings.weight_structure || 0;
+
+  document.querySelector('textarea[name="instructions"]').value = settings.instructions || '';
+
+  updateWeightVisibility(); // This also calls updateWeightTotal()
+
+  presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" applied.`;
+  presetFeedbackDiv.className = 'text-info mt-1';
+
+  // Optional: If Ollama URL or model changed, inform user or auto-fetch.
+  // For now, just setting values. User can click "Fetch Models" if needed.
+  // if (settings.ollamaUrl !== ollamaUrlInput.value || settings.ollamaModel !== ollamaModelSelect.value) {
+  //    fetchModelsBtn.click(); // Or provide a message
+  // }
+}
+
+function deletePreset() {
+  const selectedPresetName = loadPresetSelect.value;
+  if (!selectedPresetName) {
+    presetFeedbackDiv.textContent = 'Please select a preset to delete.';
+    presetFeedbackDiv.className = 'text-danger mt-1';
+    return;
+  }
+
+  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
+  if (presets[selectedPresetName]) {
+    delete presets[selectedPresetName];
+    localStorage.setItem('gradingPresets', JSON.stringify(presets));
+    presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" deleted.`;
+    presetFeedbackDiv.className = 'text-success mt-1';
+    loadPresetList();
+  } else {
+    presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" not found.`;
+    presetFeedbackDiv.className = 'text-danger mt-1';
+  }
+}
+
+// Event Listeners for Preset Management
+savePresetBtn.addEventListener('click', savePreset);
+loadPresetSelect.addEventListener('change', applyPreset);
+deletePresetBtn.addEventListener('click', deletePreset);
 
 // --- Annotation Menu Logic ---
 let selectedRange=null;
