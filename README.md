@@ -18,6 +18,9 @@ Teacher-mode annotation tools(highlight a part of the text and a pop up will ope
 Download annotated PDF report
 
 - **Preset Management:** Save and load common grading configurations (including Ollama settings, AI tone, strictness, rubric, criteria, weights, and instructions) using browser local storage.
+- **Direct Text Input:** Paste essay text directly as an alternative to file upload.
+- **Enhanced Annotations:** Improved visual distinction for teacher-added annotations in both the web interface and PDF reports.
+- **Code Organization:** JavaScript refactored into a separate static file for better maintainability.
 
 🛠 Requirements
 Python 3.9+
