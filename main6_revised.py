@@ -1,6 +1,7 @@
 # main.py
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import io
@@ -9,6 +10,8 @@ from weasyprint import HTML as WPHTML
 import json # Added for JSONDecodeError
 
 app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
@@ -109,10 +112,12 @@ mark {
   padding: 0.1em 0.3em;      /* Padding around AI comments */
   border-radius: 3px;       /* Rounded corners for AI comments */
 }
-.teacher-annotation {
-  /* background-color: #99d0ff; */ /* Removed background color */
-  border-bottom: 2px dotted #007bff; /* Dotted blue underline */
-  cursor: pointer; /* Or cursor: help; */
+.teacher-manual-annotation {
+  background-color: #add8e6; /* Light blue background */
+  border-bottom: 2px dashed #00008b; /* Dark blue dashed underline */
+  cursor: help;
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
 }
 #annotate-menu {
   position: absolute;
@@ -200,8 +205,13 @@ textarea { width: 100%; }
       <!-- End Preset Management Card -->
 
       <div class="mb-3">
-        <label class="form-label">Upload Essay</label>
-        <input type="file" name="file" class="form-control" accept=".txt" required>
+        <label class="form-label">Upload Essay (.txt file)</label>
+        <input type="file" name="file" id="file-upload" class="form-control" accept=".txt">
+      </div>
+      <div class="text-center my-2"><strong>OR</strong></div>
+      <div class="mb-3">
+        <label class="form-label">Paste Essay Text</label>
+        <textarea name="text_input" id="text-input" class="form-control" rows="10" placeholder="Paste your essay text directly here..."></textarea>
       </div>
       <div class="mb-3">
         <label class="form-label">AI Tone</label>
@@ -300,482 +310,7 @@ textarea { width: 100%; }
   </div>
 </div>
 </div>
-<script>
-const presets = {
-  AP: {criteria:["grammar","vocabulary","coherence","structure"], weights:{grammar:25,vocabulary:25,coherence:25,structure:25}},
-  IELTS: {criteria:["grammar","vocabulary","coherence","spelling"], weights:{grammar:30,vocabulary:25,coherence:25,spelling:20}},
-  TOEFL: {criteria:["grammar","vocabulary","coherence"], weights:{grammar:35,vocabulary:30,coherence:35}}
-};
-
-const ollamaUrlInput = document.getElementById('ollama-url');
-const ollamaModelSelect = document.getElementById('ollama-model');
-const fetchModelsBtn = document.getElementById('fetch-models-btn');
-const modelFetchErrorDiv = document.getElementById('model-fetch-error');
-const analyzeErrorDiv = document.getElementById('analyze-error');
-const spinner = document.getElementById('spinner');
-const uploadForm = document.getElementById('upload-form');
-
-// Preset Management Elements
-const presetNameInput = document.getElementById('preset-name');
-const savePresetBtn = document.getElementById('save-preset-btn');
-const loadPresetSelect = document.getElementById('load-preset-select');
-const deletePresetBtn = document.getElementById('delete-preset-btn');
-const presetFeedbackDiv = document.getElementById('preset-feedback');
-
-
-// --- Fetch Ollama Models ---
-fetchModelsBtn.addEventListener('click', async () => {
-  const url = ollamaUrlInput.value.trim();
-  if (!url) {
-    alert('Please enter the Ollama server URL.');
-    return;
-  }
-  ollamaModelSelect.disabled = true;
-  ollamaModelSelect.innerHTML = '<option value="">Fetching...</option>';
-  modelFetchErrorDiv.textContent = ''; // Clear previous errors
-  fetchModelsBtn.disabled = true;
-
-  const formData = new FormData();
-  formData.append('ollama_url', url);
-
-  try {
-    const response = await fetch('/get_models', {
-      method: 'POST',
-      body: formData
-    });
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || `HTTP error ${response.status}`);
-    }
-    const result = await response.json();
-    ollamaModelSelect.innerHTML = ''; // Clear existing options
-    if (result.models && result.models.length > 0) {
-      result.models.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model;
-        option.textContent = model;
-        // Pre-select common models if found
-        if (model.includes('llama3') || model.includes('mistral') || model.includes('phi3')) {
-            option.selected = true;
-        }
-        ollamaModelSelect.appendChild(option);
-      });
-      ollamaModelSelect.disabled = false;
-       // Attempt to pre-select a sensible default if none were explicitly selected above
-      if (!ollamaModelSelect.value && ollamaModelSelect.options.length > 0) {
-          ollamaModelSelect.selectedIndex = 0;
-      }
-    } else {
-      ollamaModelSelect.innerHTML = '<option value="">No models found</option>';
-    }
-  } catch (error) {
-    console.error('Error fetching models:', error);
-    modelFetchErrorDiv.textContent = `Error: ${error.message}`;
-    ollamaModelSelect.innerHTML = '<option value="">Error fetching</option>';
-  } finally {
-      fetchModelsBtn.disabled = false;
-  }
-});
-
-// Trigger fetch models on initial load if URL is present (optional)
-// if (ollamaUrlInput.value) {
-//    fetchModelsBtn.click();
-// }
-
-document.getElementById('preset').onchange=()=>{
-  const p=presets[document.getElementById('preset').value]; if(!p)return;
-  document.querySelectorAll('input[name="criteria"]').forEach(cb=>cb.checked=p.criteria.includes(cb.value));
-  Object.entries(p.weights).forEach(([k,v])=>{
-    let el=document.querySelector('input[name=weight_'+k+']'); if(el)el.value=v;
-  });
-  updateWeightVisibility();
-};
-
-function flattenTeacherComments() {
-  document.querySelectorAll('.teacher-annotation').forEach(span => {
-    if(span.dataset.flattened) return;
-    const comment = span.getAttribute('title');
-    if (!comment) return;
-    const inline = document.createElement('mark');
-    inline.textContent = `[Teacher: ${comment}]`;
-    span.parentNode.insertBefore(inline, span.nextSibling);
-    span.dataset.flattened = "true";
-  });
-}
-
-// --- Analyze Essay ---
-uploadForm.addEventListener('submit', async e => {
-  e.preventDefault();
-  analyzeErrorDiv.textContent = ''; // Clear previous errors
-
-  // Basic validation
-  if (!ollamaModelSelect.value) {
-      analyzeErrorDiv.textContent = 'Please fetch models and select one.';
-      return;
-  }
-   if (!e.target.querySelector('input[name="file"]').files[0]) {
-       analyzeErrorDiv.textContent = 'Please select an essay file.';
-       return;
-   }
-
-
-  const data = new FormData(e.target); // Gets all form fields including ollama_url and ollama_model
-
-  // Consolidate criteria
-  const criteriaChecked = [];
-  e.target.querySelectorAll('input[name="criteria"]:checked').forEach(cb => criteriaChecked.push(cb.value));
-  data.set('criteria', criteriaChecked.join(', '));
-
-  // Ensure weights are included (FormData might not pick them up correctly if display:none)
-  ['grammar','vocabulary','coherence','spelling','structure'].forEach(k=>{
-    const el = e.target.querySelector(`input[name=weight_${k}]`);
-    if(el) data.set('weight_'+k, el.value); // FormData should handle this, but being explicit is safer
-  });
-
-
-  spinner.style.display='inline-block';
-  document.getElementById('original').textContent = ''; // Clear previous results
-  document.getElementById('annotated').innerHTML = '';
-  document.getElementById('grade').value = '';
-
-  try {
-    const resp = await fetch('/analyze', { method: 'POST', body: data });
-     if (!resp.ok) {
-        const errorData = await resp.json();
-        throw new Error(`Analysis failed: ${errorData.detail || errorData.error || `HTTP ${resp.status}`}`);
-     }
-    const result = await resp.json();
-
-    if (result.error) { // Handle application-level errors returned in JSON
-        throw new Error(result.error);
-    }
-
-    document.getElementById('original').textContent = result.original;
-    document.getElementById('annotated').innerHTML = result.annotated;
-    document.getElementById('grade').value = result.grade;
-
-  } catch (error) {
-      console.error("Analysis Error:", error);
-      analyzeErrorDiv.textContent = `Error: ${error.message}`;
-  } finally {
-      spinner.style.display='none';
-  }
-});
-
-// --- Download PDF ---
-function downloadPDF() {
-  const annotated = document.getElementById('annotated').innerHTML;
-  const grade = document.getElementById('grade').value;
-  const formData = new FormData();
-  formData.append('annotated_html', annotated);
-  formData.append('grade', grade);
-
-  fetch('/download', {
-    method: 'POST',
-    body: formData
-  })
-  .then(res => {
-    if (!res.ok) {
-      throw new Error(`Download failed: HTTP ${res.status}`);
-    }
-    return res.blob();
-   })
-  .then(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'graded_essay.pdf';
-    document.body.appendChild(a); // Required for Firefox
-    a.click();
-    a.remove(); // Clean up
-    URL.revokeObjectURL(url);
-  })
-  .catch(error => {
-      console.error("PDF Download Error:", error);
-      alert(`Could not download PDF: ${error.message}`); // Inform user
-   });
-}
-
-// --- UI Helper Functions ---
-function updateWeightVisibility() {
-  document.querySelectorAll('input[name="criteria"]').forEach(cb=>{
-    const container = document.querySelector('.weight-input[data-criteria="'+cb.value+'"]');
-    if(container){container.style.display=cb.checked?'block':'none';}
-  });
-  updateWeightTotal();
-}
-
-function updateWeightTotal() {
-  let total=0;
-  document.querySelectorAll('#weights-container input[type=number]').forEach(i=>{
-    if(i.closest('.weight-input').style.display!=='none'){ total+=parseInt(i.value)||0; }
-  });
-  const totalEl = document.getElementById('weight-total');
-  totalEl.innerText=total;
-   // Optional: Add visual feedback if total is not 100
-   if (total !== 100) {
-       totalEl.style.color = 'red';
-       totalEl.style.fontWeight = 'bold';
-   } else {
-       totalEl.style.color = 'inherit';
-       totalEl.style.fontWeight = 'normal';
-   }
-}
-
-document.querySelectorAll('input[name="criteria"]').forEach(cb => cb.onchange=updateWeightVisibility);
-document.querySelectorAll('#weights-container input[type=number]').forEach(i => i.oninput=updateWeightTotal);
-
-window.onload = function() {
-    updateWeightVisibility();
-    loadPresetList(); // Add this call
-};
-
-// --- Preset Management Functions ---
-function savePreset() {
-  const presetName = presetNameInput.value.trim();
-  if (!presetName) {
-    presetFeedbackDiv.textContent = 'Please enter a preset name.';
-    presetFeedbackDiv.className = 'text-danger mt-1';
-    return;
-  }
-
-  const criteriaChecked = [];
-  document.querySelectorAll('input[name="criteria"]:checked').forEach(cb => criteriaChecked.push(cb.value));
-
-  const settings = {
-    ollamaUrl: ollamaUrlInput.value,
-    ollamaModel: ollamaModelSelect.value,
-    tone: document.getElementById('tone').value,
-    strictness: document.getElementById('strictness').value,
-    rubricPreset: document.getElementById('preset').value, // Rubric preset (AP, IELTS)
-    gradeLevel: document.getElementById('grade_level').value,
-    criteria: criteriaChecked,
-    weight_grammar: document.querySelector('input[name="weight_grammar"]').value,
-    weight_vocabulary: document.querySelector('input[name="weight_vocabulary"]').value,
-    weight_coherence: document.querySelector('input[name="weight_coherence"]').value,
-    weight_spelling: document.querySelector('input[name="weight_spelling"]').value,
-    weight_structure: document.querySelector('input[name="weight_structure"]').value,
-    instructions: document.querySelector('textarea[name="instructions"]').value
-  };
-
-  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
-  presets[presetName] = settings;
-  localStorage.setItem('gradingPresets', JSON.stringify(presets));
-
-  presetFeedbackDiv.textContent = `Preset "${presetName}" saved!`;
-  presetFeedbackDiv.className = 'text-success mt-1';
-  loadPresetList();
-  presetNameInput.value = '';
-}
-
-function loadPresetList() {
-  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
-  loadPresetSelect.innerHTML = '<option value="">-- Load Preset --</option>'; // Clear existing options
-
-  for (const name in presets) {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    loadPresetSelect.appendChild(option);
-  }
-}
-
-function applyPreset() {
-  const selectedPresetName = loadPresetSelect.value;
-  if (!selectedPresetName) return;
-
-  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
-  const settings = presets[selectedPresetName];
-
-  if (!settings) {
-    presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" not found.`;
-    presetFeedbackDiv.className = 'text-danger mt-1';
-    return;
-  }
-
-  ollamaUrlInput.value = settings.ollamaUrl || 'http://localhost:11434'; // Default if not set
-
-  // Set model value. If the model isn't in the list, this will select nothing,
-  // or user can manually fetch.
-  ollamaModelSelect.value = settings.ollamaModel || "";
-
-
-  document.getElementById('tone').value = settings.tone;
-  document.getElementById('strictness').value = settings.strictness;
-  document.getElementById('preset').value = settings.rubricPreset;
-  // Manually trigger change for rubric preset to update criteria/weights based on its own logic first
-  document.getElementById('preset').dispatchEvent(new Event('change'));
-
-  document.getElementById('grade_level').value = settings.gradeLevel;
-
-  // Uncheck all criteria first
-  document.querySelectorAll('input[name="criteria"]').forEach(cb => cb.checked = false);
-  // Check saved criteria
-  if (settings.criteria && Array.isArray(settings.criteria)) {
-    settings.criteria.forEach(criterionValue => {
-      const cb = document.querySelector(`input[name="criteria"][value="${criterionValue}"]`);
-      if (cb) cb.checked = true;
-    });
-  }
-
-  // Apply weights
-  document.querySelector('input[name="weight_grammar"]').value = settings.weight_grammar || 0;
-  document.querySelector('input[name="weight_vocabulary"]').value = settings.weight_vocabulary || 0;
-  document.querySelector('input[name="weight_coherence"]').value = settings.weight_coherence || 0;
-  document.querySelector('input[name="weight_spelling"]').value = settings.weight_spelling || 0;
-  document.querySelector('input[name="weight_structure"]').value = settings.weight_structure || 0;
-
-  document.querySelector('textarea[name="instructions"]').value = settings.instructions || '';
-
-  updateWeightVisibility(); // This also calls updateWeightTotal()
-
-  presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" applied.`;
-  presetFeedbackDiv.className = 'text-info mt-1';
-
-  // Optional: If Ollama URL or model changed, inform user or auto-fetch.
-  // For now, just setting values. User can click "Fetch Models" if needed.
-  // if (settings.ollamaUrl !== ollamaUrlInput.value || settings.ollamaModel !== ollamaModelSelect.value) {
-  //    fetchModelsBtn.click(); // Or provide a message
-  // }
-}
-
-function deletePreset() {
-  const selectedPresetName = loadPresetSelect.value;
-  if (!selectedPresetName) {
-    presetFeedbackDiv.textContent = 'Please select a preset to delete.';
-    presetFeedbackDiv.className = 'text-danger mt-1';
-    return;
-  }
-
-  let presets = JSON.parse(localStorage.getItem('gradingPresets')) || {};
-  if (presets[selectedPresetName]) {
-    delete presets[selectedPresetName];
-    localStorage.setItem('gradingPresets', JSON.stringify(presets));
-    presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" deleted.`;
-    presetFeedbackDiv.className = 'text-success mt-1';
-    loadPresetList();
-  } else {
-    presetFeedbackDiv.textContent = `Preset "${selectedPresetName}" not found.`;
-    presetFeedbackDiv.className = 'text-danger mt-1';
-  }
-}
-
-// Event Listeners for Preset Management
-savePresetBtn.addEventListener('click', savePreset);
-loadPresetSelect.addEventListener('change', applyPreset);
-deletePresetBtn.addEventListener('click', deletePreset);
-
-// --- Annotation Menu Logic ---
-let selectedRange=null;
-function hideMenu(){document.getElementById('annotate-menu').style.display='none';}
-function saveAnnotation(){
-  const comment=document.getElementById('comment-input').value.trim();
-  if(!selectedRange || !comment) return hideMenu(); // Also hide if comment is empty
-  const span=document.createElement('span');
-  span.className='teacher-annotation';
-  span.title=comment; // Store comment in title attribute
-  span.style.cursor = 'help'; // Indicate hover provides info
-
-  try {
-    // This is the most robust way to wrap content, handling partial selections etc.
-    span.appendChild(selectedRange.extractContents());
-    selectedRange.insertNode(span);
-  } catch (e) {
-      console.error("Error applying annotation:", e);
-      // Fallback or notification if needed
-  } finally {
-     hideMenu();
-     selectedRange = null; // Clear selection after applying
-     window.getSelection().removeAllRanges(); // Deselect text
-  }
-}
-
-document.getElementById('annotated').addEventListener('mouseup',e=>{
-  const sel=window.getSelection();
-  if(!sel || sel.isCollapsed || !sel.rangeCount) return;
-
-  // Check if the selection is actually within the 'annotated' div
-  const container = document.getElementById('annotated');
-  if (!container.contains(sel.anchorNode) || !container.contains(sel.focusNode)) {
-      return; // Selection is outside the target div
-  }
-
-  selectedRange=sel.getRangeAt(0).cloneRange();
-  const menu=document.getElementById('annotate-menu');
-
-  // Set display to block to measure dimensions, but make it invisible initially for smoother appearance
-  menu.style.visibility = 'hidden';
-  menu.style.display='block';
-  document.getElementById('comment-input').value='';
-  // Don't focus yet, until position is calculated
-
-  let menuHeight = menu.offsetHeight; // Get height after display:block
-  let menuWidth = menu.offsetWidth; // Get width after display:block
-
-  // Attempt to position menu above and slightly to the right of the cursor initially
-  let top = e.pageY - menuHeight - 5; // 5px offset above (menu bottom is 5px above cursor)
-  let left = e.pageX + 5;             // 5px offset to the right of the cursor
-
-  // Boundary checks to keep menu within viewport
-  const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
-  const scrollY = window.pageYOffset || document.documentElement.scrollTop;
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-
-  // If menu goes off top, try to position it below the cursor
-  if (top < scrollY) {
-    top = e.pageY + 15; // Place below cursor (15px offset)
-  }
-
-  // If menu goes off right, adjust left to keep it in viewport
-  if (left + menuWidth > scrollX + viewportWidth) {
-    left = scrollX + viewportWidth - menuWidth - 5; // 5px padding from right edge
-  }
-  // If menu goes off left (e.g., if it was flipped to below and cursor is far left), adjust left
-  if (left < scrollX) {
-    left = scrollX + 5; // 5px padding from left edge
-  }
-  // If menu goes off bottom (especially if it was flipped below cursor), adjust top
-  if (top + menuHeight > scrollY + viewportHeight) {
-      top = scrollY + viewportHeight - menuHeight - 5; // 5px padding from bottom edge
-  }
-  // A final check if after all adjustments, it's still too high (e.g. very tall menu in short viewport)
-  if (top < scrollY) {
-      top = scrollY + 5; // 5px padding from top edge
-  }
-
-  menu.style.left=left+'px';
-  menu.style.top=top+'px';
-  menu.style.visibility = 'visible'; // Make it visible after positioning
-  document.getElementById('comment-input').focus(); // Focus the input field now
-});
-
-// Hide menu if clicking elsewhere
-document.addEventListener('mousedown', function(event) {
-    const menu = document.getElementById('annotate-menu');
-    const annotatedDiv = document.getElementById('annotated');
-    // Hide if click is outside the menu AND outside the annotated div (unless it was the click that opened the menu)
-    if (menu.style.display === 'block' && !menu.contains(event.target)) {
-        // Check if the click was inside the annotated div to potentially start a new selection
-        // If the click is outside the annotated div entirely, hide the menu.
-        if (!annotatedDiv.contains(event.target)) {
-             hideMenu();
-        } else {
-            // If click is inside annotated div but not on the menu,
-            // potentially allow starting a new selection without explicitly hiding menu here.
-            // The mouseup event on 'annotated' will handle showing the menu for a new selection.
-            // However, if the selection becomes collapsed, we should hide it.
-             setTimeout(() => { // Use timeout to allow selection to update
-                 const sel = window.getSelection();
-                 if (!sel || sel.isCollapsed) {
-                     hideMenu();
-                 }
-             }, 0);
-        }
-    }
-});
-
-</script>
+<script src="/static/js/scripts.js"></script>
 </body>
 </html>
 """
@@ -783,7 +318,8 @@ document.addEventListener('mousedown', function(event) {
 # Modify /analyze endpoint to accept ollama_url and ollama_model
 @app.post("/analyze")
 async def analyze(
-    file: UploadFile = File(...),
+    file: UploadFile = File(None), # Changed to None
+    text_input: str = Form(None),  # Added
     ollama_url: str = Form(...),         # Added
     ollama_model: str = Form(...),       # Added
     criteria: str = Form(""),
@@ -797,11 +333,26 @@ async def analyze(
     weight_spelling: int = Form(25),
     weight_structure: int = Form(0)
 ):
-    try:
-        content = (await file.read()).decode("utf-8")
-    except Exception as e:
-        print(f"Error reading uploaded file: {e}") # Console log
-        raise HTTPException(status_code=400, detail=f"Invalid file upload or encoding: {e}")
+    content = None
+    if text_input:
+        content = text_input
+        print("--- Received text input from textarea ---") # Console log
+    elif file:
+        try:
+            file_content_bytes = await file.read()
+            content = file_content_bytes.decode("utf-8")
+            print(f"--- Received file upload: {file.filename} ---") # Console log
+        except Exception as e:
+            print(f"Error reading uploaded file: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid file upload or encoding: {e}")
+    else:
+        # This case should ideally be caught by frontend validation, but good to have backend check
+        print("Error: Neither file nor text_input provided.") # Console log
+        raise HTTPException(status_code=400, detail="No essay content provided. Please upload a file or paste text.")
+
+    if not content: # Should be redundant if logic above is correct, but as a safeguard
+         print("Error: Content is empty after checks.") # Console log
+         raise HTTPException(status_code=400, detail="Essay content is empty.")
 
     # Basic validation for weights (optional but good practice)
     total_weight = weight_grammar + weight_vocabulary + weight_coherence + weight_spelling + weight_structure
@@ -942,8 +493,25 @@ async def download_pdf(annotated_html: str = Form(...), grade: str = Form(...)):
 body {{ font-family: 'Times New Roman', Times, serif; margin: 2em; line-height: 1.5; }}
 h1 {{ text-align: center; color: #2c3e50; border-bottom: 1px solid #bdc3c7; padding-bottom: 10px; }}
 h2 {{ margin-top: 1.5em; color: #34495e; }}
-mark {{ background-color: #f1c40f; color: #333; padding: 0.1em 0.2em; border-radius: 3px; }}
-.teacher-annotation {{ background-color: #aed6f1; border: 1px dashed #3498db; padding: 0.1em 0.3em; border-radius: 4px; cursor: help; }}
+.teacher-manual-annotation {{ /* Styles the original text that was annotated by teacher */
+  background-color: #d6eaf8; /* Light blue background for the annotated text itself */
+  border-bottom: 1px dotted #2980b9; /* Dotted underline for the annotated text */
+  padding: 0.05em;
+}}
+mark {{ /* For AI comments */
+  background-color: #fcf3cf; /* Light yellow for AI comments */
+  color: #7d6608;
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
+}}
+mark.manual-comment-embed {{ /* For the teacher's embedded comment text */
+  background-color: #d1eafb;
+  color: #154360;
+  font-style: italic;
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
+  margin-left: 2px; /* Add some space after the original text */
+}}
 div.essay {{
     border: 1px solid #ccc;
     padding: 20px;
