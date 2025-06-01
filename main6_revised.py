@@ -7,7 +7,8 @@ import requests
 import io
 import re
 from weasyprint import HTML as WPHTML
-import json # Added for JSONDecodeError
+import json  # Added for JSONDecodeError
+import html  # Used for escaping HTML content
 
 app = FastAPI()
 
@@ -16,8 +17,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
-
-# Removed hardcoded OLLAMA_URL and OLLAMA_MODEL
 
 # Modified call_ollama to accept url and model
 def call_ollama(prompt, ollama_base_url, model_name):
@@ -29,20 +28,20 @@ def call_ollama(prompt, ollama_base_url, model_name):
             "messages": [{"role": "user", "content": prompt}],
             "stream": False
         }
-        print(f"--- Calling Ollama API ({model_name}) at {ollama_api_url} ---") # Console log
+        print(f"--- Calling Ollama API ({model_name}) at {ollama_api_url} ---")  # Console log
         r = requests.post(ollama_api_url, json=data, timeout=120)
-        r.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
+        r.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
         response_data = r.json()
-        print("--- Ollama API Response Received ---") # Console log
+        print("--- Ollama API Response Received ---")  # Console log
         return response_data.get('message', {}).get('content', '')
     except requests.exceptions.ConnectionError as e:
-        print(f"Ollama API Connection Error: {e}") # Console log specific error
+        print(f"Ollama API Connection Error: {e}")  # Console log specific error
         raise RuntimeError(f"Cannot connect to Ollama server at {ollama_base_url}. Is it running?")
     except requests.exceptions.Timeout as e:
-        print(f"Ollama API Timeout Error: {e}") # Console log specific error
+        print(f"Ollama API Timeout Error: {e}")  # Console log specific error
         raise RuntimeError("Request to Ollama server timed out.")
     except requests.exceptions.HTTPError as e:
-        print(f"Ollama API HTTP Error: {e.response.status_code} - {e.response.text}") # Console log specific error
+        print(f"Ollama API HTTP Error: {e.response.status_code} - {e.response.text}")  # Console log specific error
         # Try to parse error message from Ollama if possible
         error_detail = f"HTTP {e.response.status_code}"
         try:
@@ -50,10 +49,10 @@ def call_ollama(prompt, ollama_base_url, model_name):
             if 'error' in error_json:
                 error_detail = error_json['error']
         except json.JSONDecodeError:
-            pass # Keep the basic HTTP error if JSON parsing fails
+            pass  # Keep the basic HTTP error if JSON parsing fails
         raise RuntimeError(f"Ollama API error: {error_detail}")
     except Exception as e:
-        print(f"Ollama API Generic Error: {e}") # Console log other errors
+        print(f"Ollama API Generic Error: {e}")  # Console log other errors
         raise RuntimeError(f"An unexpected error occurred contacting the AI model: {e}")
 
 # New endpoint to fetch models
@@ -61,23 +60,23 @@ def call_ollama(prompt, ollama_base_url, model_name):
 async def get_models(ollama_url: str = Form(...)):
     """Fetches available models from the specified Ollama server."""
     tags_url = f"{ollama_url.rstrip('/')}/api/tags"
-    print(f"--- Fetching models from {tags_url} ---") # Console log
+    print(f"--- Fetching models from {tags_url} ---")  # Console log
     try:
-        response = requests.get(tags_url, timeout=10) # Add timeout
-        response.raise_for_status() # Check for HTTP errors
+        response = requests.get(tags_url, timeout=10)  # Add timeout
+        response.raise_for_status()  # Check for HTTP errors
         data = response.json()
-        models = sorted([m['name'] for m in data.get('models', [])]) # Sort models alphabetically
-        print(f"--- Successfully fetched models: {models} ---") # Console log
+        models = sorted([m['name'] for m in data.get('models', [])])  # Sort models alphabetically
+        print(f"--- Successfully fetched models: {models} ---")  # Console log
         return {"models": models}
     except requests.exceptions.ConnectionError as e:
-        print(f"Error fetching models (ConnectionError): {e}") # Console log specific error
+        print(f"Error fetching models (ConnectionError): {e}")  # Console log specific error
         raise HTTPException(status_code=503, detail=f"Could not connect to Ollama server at {ollama_url}")
     except requests.exceptions.Timeout as e:
-        print(f"Error fetching models (Timeout): {e}") # Console log specific error
+        print(f"Error fetching models (Timeout): {e}")  # Console log specific error
         raise HTTPException(status_code=504, detail="Request to Ollama server timed out while fetching models.")
-    except requests.exceptions.RequestException as e: # Catch other requests errors (like invalid URL, HTTPError)
+    except requests.exceptions.RequestException as e:  # Catch other requests errors (like invalid URL, HTTPError)
         error_detail = f"Failed to fetch models from {ollama_url}"
-        status_code = 500 # Default status code
+        status_code = 500  # Default status code
         if e.response is not None:
             status_code = e.response.status_code
             error_detail += f" (HTTP {status_code})"
@@ -85,15 +84,15 @@ async def get_models(ollama_url: str = Form(...)):
             try:
                 error_json = e.response.json()
                 if 'error' in error_json:
-                    error_detail = error_json['error'] # Use Ollama's error message
+                    error_detail = error_json['error']  # Use Ollama's error message
             except json.JSONDecodeError:
-                 error_detail += f": {e.response.text[:100]}" # Include start of text if not JSON
+                error_detail += f": {e.response.text[:100]}"  # Include start of text if not JSON
 
-        print(f"Error fetching models (RequestException): {e}") # Console log specific error
+        print(f"Error fetching models (RequestException): {e}")  # Console log specific error
         raise HTTPException(status_code=status_code, detail=error_detail)
-    except Exception as e: # Catch any other non-requests exceptions
-         print(f"Unexpected error fetching models: {e}") # Console log
-         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+    except Exception as e:  # Catch any other non-requests exceptions
+        print(f"Unexpected error fetching models: {e}")  # Console log
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -318,10 +317,10 @@ textarea { width: 100%; }
 # Modify /analyze endpoint to accept ollama_url and ollama_model
 @app.post("/analyze")
 async def analyze(
-    file: UploadFile = File(None), # Changed to None
+    file: UploadFile = File(None),  # Changed to None
     text_input: str = Form(None),  # Added
-    ollama_url: str = Form(...),         # Added
-    ollama_model: str = Form(...),       # Added
+    ollama_url: str = Form(...),  # Added
+    ollama_model: str = Form(...),  # Added
     criteria: str = Form(""),
     instructions: str = Form(""),
     tone: str = Form("formal"),
@@ -336,31 +335,30 @@ async def analyze(
     content = None
     if text_input:
         content = text_input
-        print("--- Received text input from textarea ---") # Console log
+        print("--- Received text input from textarea ---")  # Console log
     elif file:
         try:
             file_content_bytes = await file.read()
             content = file_content_bytes.decode("utf-8")
-            print(f"--- Received file upload: {file.filename} ---") # Console log
+            print(f"--- Received file upload: {file.filename} ---")  # Console log
         except Exception as e:
             print(f"Error reading uploaded file: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid file upload or encoding: {e}")
     else:
         # This case should ideally be caught by frontend validation, but good to have backend check
-        print("Error: Neither file nor text_input provided.") # Console log
+        print("Error: Neither file nor text_input provided.")  # Console log
         raise HTTPException(status_code=400, detail="No essay content provided. Please upload a file or paste text.")
 
-    if not content: # Should be redundant if logic above is correct, but as a safeguard
-         print("Error: Content is empty after checks.") # Console log
-         raise HTTPException(status_code=400, detail="Essay content is empty.")
+    if not content:  # Should be redundant if logic above is correct, but as a safeguard
+        print("Error: Content is empty after checks.")  # Console log
+        raise HTTPException(status_code=400, detail="Essay content is empty.")
 
     # Basic validation for weights (optional but good practice)
     total_weight = weight_grammar + weight_vocabulary + weight_coherence + weight_spelling + weight_structure
     if total_weight != 100:
-         print(f"Warning: Rubric weights do not sum to 100 (Sum: {total_weight})") # Console log
-         # Decide if you want to raise an error or just proceed
-         # raise HTTPException(status_code=400, detail=f"Rubric weights must sum to 100, current sum is {total_weight}")
-
+        print(f"Warning: Rubric weights do not sum to 100 (Sum: {total_weight})")  # Console log
+        # Decide if you want to raise an error or just proceed
+        # raise HTTPException(status_code=400, detail=f"Rubric weights must sum to 100, current sum is {total_weight}")
 
     rubric = f"""
 Grading Rubric and Weights:
@@ -401,26 +399,25 @@ Now, grade this essay strictly following all the rules above:
 {content}
 --- ESSAY END ---
 """
-    print("--- Preparing to call Ollama for analysis ---") # Console log
+    print("--- Preparing to call Ollama for analysis ---")  # Console log
     try:
         # Pass ollama_url and ollama_model to the call function
         ai_response = call_ollama(prompt, ollama_url, ollama_model)
-        if not ai_response: # Handle empty response from Ollama
-             print("Error: Received empty response from Ollama.") # Console log
-             raise RuntimeError("AI model returned an empty response.")
+        if not ai_response:  # Handle empty response from Ollama
+            print("Error: Received empty response from Ollama.")  # Console log
+            raise RuntimeError("AI model returned an empty response.")
 
-        print("--- AI Response Received, Processing... ---") # Console log
+        print("--- AI Response Received, Processing... ---")  # Console log
         # print(f"Raw AI Response:\n{ai_response}\n--- End Raw AI Response ---") # Optional: log raw response for debugging
 
     except RuntimeError as e:
-         # Error already printed in call_ollama, just raise HTTP exception
-         print(f"Error during Ollama call in /analyze: {e}") # Console log specific context
-         raise HTTPException(status_code=503, detail=str(e)) # Send error detail to frontend
+        # Error already printed in call_ollama, just raise HTTP exception
+        print(f"Error during Ollama call in /analyze: {e}")  # Console log specific context
+        raise HTTPException(status_code=503, detail=str(e))  # Send error detail to frontend
     except Exception as e:
-         # Catch any other unexpected errors during the call
-         print(f"Unexpected error calling Ollama in /analyze: {e}") # Console log
-         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during AI analysis: {e}")
-
+        # Catch any other unexpected errors during the call
+        print(f"Unexpected error calling Ollama in /analyze: {e}")  # Console log
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during AI analysis: {e}")
 
     # --- Process AI Response ---
     # Isolate the annotated text part (everything before the first score line)
@@ -433,120 +430,279 @@ Now, grade this essay strictly following all the rules above:
             if end_of_annotation_index == -1 or index < end_of_annotation_index:
                 end_of_annotation_index = index
         except ValueError:
-            continue # Keyword not found
+            continue  # Keyword not found
 
     if end_of_annotation_index != -1:
         annotated_text_part = ai_response[:end_of_annotation_index]
         summary_part = ai_response[end_of_annotation_index:]
     else:
         # Fallback if scores aren't found (maybe the model didn't follow instructions)
-        print("Warning: Could not reliably find score markers in AI response. Applying annotations to the whole response.") # Console log
+        print("Warning: Could not reliably find score markers in AI response. Applying annotations to the whole response.")  # Console log
         annotated_text_part = ai_response
-        summary_part = "" # Assume no summary if markers are missing
+        summary_part = ""  # Assume no summary if markers are missing
 
     # Add <mark> tags ONLY to the annotated text part
     annotated_with_marks = re.sub(
-        r'(\[Comment:\s*.*?\])', # Made regex slightly more specific
+        r'(\[Comment:\s*.*?\])',  # Made regex slightly more specific
         r'<mark>\1</mark>',
         annotated_text_part,
-        flags=re.IGNORECASE | re.DOTALL # Added IGNORECASE
+        flags=re.IGNORECASE | re.DOTALL  # Added IGNORECASE
     )
     # Combine the marked text with the rest of the response
     full_annotated_response = annotated_with_marks + summary_part
 
     # Parse rubric scores (search within the whole response)
-    scores = {}
+    detailed_scores = {}
     for crit in ["Grammar", "Vocabulary", "Coherence", "Spelling", "Structure"]:
         # Regex: Look for the criterion name, optional colon, optional space, digits
         m = re.search(rf'^\s*{crit}\s*:\s*(\d{{1,3}})\s*$', ai_response, re.IGNORECASE | re.MULTILINE)
-        scores[crit.lower()] = m.group(1) if m else "N/A"
+        detailed_scores[crit.lower()] = m.group(1) if m else "N/A"
 
     # Parse grade (search within the whole response)
     # Regex: Look for "Grade", optional colon, optional space, digits, slash, 100
     grade_match = re.search(r'^\s*Grade\s*:\s*(\d{1,3})\s*/\s*100\s*$', ai_response, re.IGNORECASE | re.MULTILINE)
     grade = grade_match.group(1) if grade_match else "N/A"
 
-    print(f"--- Analysis Complete. Grade: {grade}, Scores: {scores} ---") # Console log
+    # Parse Strengths, Weaknesses, and Suggestions
+    strengths_match = re.search(r"Strengths:\s*(.*?)(?=Weaknesses:|Suggestions for improvement:|\Z)", ai_response, re.DOTALL | re.IGNORECASE)
+    strengths_text = strengths_match.group(1).strip() if strengths_match else "Not provided"
+
+    weaknesses_match = re.search(r"Weaknesses:\s*(.*?)(?=Strengths:|Suggestions for improvement:|\Z)", ai_response, re.DOTALL | re.IGNORECASE)
+    weaknesses_text = weaknesses_match.group(1).strip() if weaknesses_match else "Not provided"
+
+    suggestions_match = re.search(r"Suggestions for improvement:\s*(.*?)(?=Strengths:|Weaknesses:|\Z)", ai_response, re.DOTALL | re.IGNORECASE)
+    suggestions_text = suggestions_match.group(1).strip() if suggestions_match else "Not provided"
+
+    # Temporary print statements for verification
+    print(f"--- Parsed Detailed Scores: {detailed_scores} ---")
+    print(f"--- Parsed Strengths: {strengths_text[:100]}... ---")  # Print first 100 chars
+    print(f"--- Parsed Weaknesses: {weaknesses_text[:100]}... ---")
+    print(f"--- Parsed Suggestions: {suggestions_text[:100]}... ---")
+    print(f"--- Analysis Complete. Grade: {grade} ---")  # Console log
 
     # Return only the necessary parts to the frontend
     # The full_annotated_response now includes the marked comments AND the summary/scores
     return JSONResponse(content={
         "original": content,
-        "annotated": full_annotated_response, # Send the combined content
-        "grade": grade
-        # You could optionally parse and return scores/strengths/weaknesses separately if needed by the frontend
-        # "scores": scores,
+        "annotated": full_annotated_response,  # Send the combined content
+        "grade": grade,
+        "detailed_scores": detailed_scores,
+        "strengths": strengths_text,
+        "weaknesses": weaknesses_text,
+        "suggestions": suggestions_text,
     })
 
 
 @app.post("/download")
-async def download_pdf(annotated_html: str = Form(...), grade: str = Form(...)):
+async def download_pdf(
+    annotated_html: str = Form(...),
+    grade: str = Form(...),
+    original_essay: str = Form(...),
+    detailed_scores: str = Form(...),  # JSON string
+    strengths: str = Form(...),
+    weaknesses: str = Form(...),
+    suggestions: str = Form(...)
+):
     # Basic cleaning: remove potentially harmful script tags just in case
-    safe_html = re.sub(r'<script.*?>.*?</script>', '', annotated_html, flags=re.IGNORECASE | re.DOTALL)
+    # It's generally better to use a proper HTML sanitizer if this were public-facing
+    # For our controlled environment, regex is a basic measure.
+    safe_annotated_html = re.sub(r'<script.*?>.*?</script>', '', annotated_html, flags=re.IGNORECASE | re.DOTALL)
 
+    # Escape HTML characters in text content to prevent XSS or rendering issues
+    # We'll use a simple escape for now, consider a more robust library for production
+    safe_original_essay = html.escape(original_essay)
+    safe_strengths = html.escape(strengths)
+    safe_weaknesses = html.escape(weaknesses)
+    safe_suggestions = html.escape(suggestions)
+
+    try:
+        parsed_detailed_scores = json.loads(detailed_scores)
+    except json.JSONDecodeError:
+        print(f"Error decoding detailed_scores JSON: {detailed_scores}")
+        # Fallback to an empty dict or handle error appropriately
+        parsed_detailed_scores = {}
+
+    # Build detailed scores list HTML
+    scores_html_list = "<ul>"
+    # Define the order of scores as they should appear
+    score_keys_ordered = ["grammar", "vocabulary", "coherence", "spelling", "structure"]
+    for key in score_keys_ordered:
+        score_value = parsed_detailed_scores.get(key, 'N/A')
+        # Capitalize first letter of key for display
+        scores_html_list += f"<li>{key.capitalize()}: {html.escape(str(score_value))}</li>"
+    scores_html_list += "</ul>"
+
+    # Note: Doubling braces in CSS to escape them inside this f-string
     html_content = f"""
 <html>
 <head>
 <meta charset="UTF-8">
 <title>Graded Essay Report</title>
 <style>
-body {{ font-family: 'Times New Roman', Times, serif; margin: 2em; line-height: 1.5; }}
-h1 {{ text-align: center; color: #2c3e50; border-bottom: 1px solid #bdc3c7; padding-bottom: 10px; }}
-h2 {{ margin-top: 1.5em; color: #34495e; }}
-.teacher-manual-annotation {{ /* Styles the original text that was annotated by teacher */
-  background-color: #d6eaf8; /* Light blue background for the annotated text itself */
-  border-bottom: 1px dotted #2980b9; /* Dotted underline for the annotated text */
+body {{
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    margin: 0.5in; /* Common page margin */
+    line-height: 1.6;
+    color: #333333; /* Dark gray for text for readability */
+    font-size: 10pt; /* Base font size for PDF */
+}}
+h1.report-title {{ /* Class for the main H1 title */
+    text-align: center;
+    color: #2c3e50; /* Dark blue */
+    border-bottom: 2px solid #3498db; /* Blue accent */
+    padding-bottom: 15px;
+    margin-bottom: 30px; /* More space after title */
+    font-size: 24pt;
+}}
+h2.section-title {{ /* Class for H2 section titles */
+    color: #34495e; /* Slightly lighter blue */
+    border-bottom: 1px solid #eaedf1; /* Light gray border */
+    padding-bottom: 8px;
+    margin-top: 30px; /* More top margin for section separation */
+    margin-bottom: 15px;
+    font-size: 16pt;
+    page-break-after: avoid; /* Try to keep title with content */
+}}
+h2.grade-display {{ /* Specifically for the Overall Grade H2 */
+    text-align: center;
+    font-size: 20pt;
+    color: #2980b9; /* Distinct blue for grade */
+    margin-top: 20px;
+    margin-bottom: 30px;
+    border-bottom: none; /* No border for grade display */
+}}
+
+/* Content blocks for various text sections */
+div.essay-content, /* For annotated essay */
+div.feedback-section, /* For strengths, weaknesses, suggestions */
+div.original-essay-text {{ /* For original essay */
+    background-color: #f9fafb; /* Very light gray background */
+    border: 1px solid #dfe4e8; /* Softer border color */
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 25px; /* Consistent bottom margin */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 10pt;
+}}
+
+div.rubric-scores {{
+    background-color: #f9fafb;
+    border: 1px solid #dfe4e8;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 25px;
+}}
+div.rubric-scores ul {{
+    list-style-type: none;
+    padding-left: 0;
+    margin-top: 0;
+}}
+div.rubric-scores li {{
+    padding: 8px 0px; /* More vertical padding */
+    border-bottom: 1px dotted #ced4da; /* Lighter dotted border */
+    font-size: 10pt;
+}}
+div.rubric-scores li:last-child {{
+    border-bottom: none;
+}}
+
+mark {{ /* For AI comments */
+  background-color: #fff7d1; /* Lighter yellow, less distracting */
+  color: #5c500a; /* Darker text for contrast */
+  padding: 0.15em 0.3em; /* Slightly more padding */
+  border-radius: 3px;
+  font-size: 0.9em; /* Slightly smaller to differentiate */
+}}
+.teacher-manual-annotation {{ /* Original text span highlighted by teacher */
+  background-color: #e7f3fe; /* Light blue */
+  border-bottom: 1px dashed #5b9bd5; /* Clearer dashed line */
   padding: 0.05em;
 }}
-mark {{ /* For AI comments */
-  background-color: #fcf3cf; /* Light yellow for AI comments */
-  color: #7d6608;
-  padding: 0.1em 0.2em;
-  border-radius: 3px;
-}}
-mark.manual-comment-embed {{ /* For the teacher's embedded comment text */
-  background-color: #d1eafb;
-  color: #154360;
+mark.manual-comment-embed {{ /* The teacher's comment itself embedded */
+  background-color: #e0eafc; /* Slightly different blue for the comment */
+  color: #1f3a60; /* Dark blue text */
   font-style: italic;
-  padding: 0.1em 0.2em;
+  padding: 0.15em 0.3em;
   border-radius: 3px;
-  margin-left: 2px; /* Add some space after the original text */
+  margin-left: 3px; /* Space from original text */
+  font-size: 0.9em;
 }}
-div.essay {{
-    border: 1px solid #ccc;
-    padding: 20px;
-    border-radius: 5px;
-    background-color: #fdfefe;
-    margin-top: 1em;
-    white-space: pre-wrap; /* Preserve whitespace and line breaks */
-    word-wrap: break-word; /* Break long words */
+
+.section-container {{ 
+    page-break-inside: avoid; /* Helps keep sections together */
 }}
-/* Ensure summary sections are formatted reasonably */
-pre {{ white-space: pre-wrap; word-wrap: break-word; }}
+
+pre {{ /* If pre tags are used anywhere, ensure they follow body font settings */
+    white-space: pre-wrap; 
+    word-wrap: break-word;
+    font-family: inherit; /* Inherit body font */
+    font-size: inherit;   /* Inherit body font size */
+}}
 </style>
 </head>
 <body>
-<h1>Graded Essay Report</h1>
-<h2>Overall Grade: {grade}/100</h2>
-<h2>Annotated Essay & Feedback</h2>
-<div class="essay">{safe_html}</div>
+<h1 class="report-title">Graded Essay Report</h1>
+
+<div class="section-container">
+  <h2 class="grade-display">Overall Grade: {html.escape(grade)}/100</h2>
+</div>
+
+<div class="section-container">
+  <h2 class="section-title">Annotated Essay & Feedback</h2>
+  <div class="essay-content">{safe_annotated_html}</div>
+</div>
+
+<div class="section-container">
+  <h2 class="section-title">Detailed Rubric Scores</h2>
+  <div class="rubric-scores">
+    {scores_html_list}
+  </div>
+</div>
+
+<div class="section-container feedback-strengths">
+  <h2 class="section-title">Strengths</h2>
+  <div class="feedback-section">{safe_strengths}</div>
+</div>
+
+<div class="section-container feedback-weaknesses">
+  <h2 class="section-title">Weaknesses</h2>
+  <div class="feedback-section">{safe_weaknesses}</div>
+</div>
+
+<div class="section-container feedback-suggestions">
+  <h2 class="section-title">Suggestions for Improvement</h2>
+  <div class="feedback-section">{safe_suggestions}</div>
+</div>
+
+<div class="section-container original-essay-section">
+  <h2 class="section-title">Original Essay</h2>
+  <div class="original-essay-text">{safe_original_essay}</div>
+</div>
+
 </body>
 </html>
 """
-    print("--- Generating PDF ---") # Console log
+    print("--- Generating PDF with enriched content ---")  # Console log
     try:
         pdf_bytes = WPHTML(string=html_content).write_pdf()
-        print("--- PDF Generation Successful ---") # Console log
-        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",
-                                 headers={"Content-Disposition": f"attachment; filename=graded_essay.pdf"})
+        if pdf_bytes is None:
+            print("Error: write_pdf returned None")  # Console log
+            raise HTTPException(status_code=500, detail="Failed to generate PDF: write_pdf returned None")
+        print("--- PDF Generation Successful ---")  # Console log
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=graded_essay.pdf"}
+        )
     except Exception as e:
-        print(f"Error generating PDF: {e}") # Console log error
-        # Consider what to return here. Maybe an HTML error page or JSON error?
+        print(f"Error generating PDF: {e}")  # Console log error
         # Returning JSON is often easier for frontend JS to handle.
         return JSONResponse(
             status_code=500,
             content={"detail": f"Failed to generate PDF: {e}"}
         )
+
 
 # Add this at the end if you want to run directly with uvicorn
 if __name__ == "__main__":
