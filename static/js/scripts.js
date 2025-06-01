@@ -12,6 +12,17 @@ const analyzeErrorDiv = document.getElementById('analyze-error');
 const spinner = document.getElementById('spinner');
 const uploadForm = document.getElementById('upload-form');
 
+// Data structure to hold analysis results for PDF generation
+let currentAnalysisData = {
+    original: '',
+    annotated: '',
+    grade: '',
+    detailed_scores: {},
+    strengths: '',
+    weaknesses: '',
+    suggestions: ''
+};
+
 // Preset Management Elements
 const presetNameInput = document.getElementById('preset-name');
 const savePresetBtn = document.getElementById('save-preset-btn');
@@ -240,6 +251,17 @@ uploadForm.addEventListener('submit', async e => {
     document.getElementById('annotated').innerHTML = result.annotated;
     document.getElementById('grade').value = result.grade;
 
+    // Populate currentAnalysisData
+    currentAnalysisData.original = result.original;
+    currentAnalysisData.annotated = result.annotated;
+    currentAnalysisData.grade = result.grade;
+    currentAnalysisData.detailed_scores = result.detailed_scores || {}; // Ensure it's an object
+    currentAnalysisData.strengths = result.strengths || 'Not provided';
+    currentAnalysisData.weaknesses = result.weaknesses || 'Not provided';
+    currentAnalysisData.suggestions = result.suggestions || 'Not provided';
+
+    console.log("Updated currentAnalysisData:", currentAnalysisData); // For verification
+
   } catch (error) {
       console.error("Analysis Error:", error);
       analyzeErrorDiv.textContent = `Error: ${error.message}`;
@@ -250,11 +272,37 @@ uploadForm.addEventListener('submit', async e => {
 
 // --- Download PDF ---
 function downloadPDF() {
-  const annotated = document.getElementById('annotated').innerHTML;
-  const grade = document.getElementById('grade').value;
+  // Retrieve data from currentAnalysisData
+  const {
+    original,
+    annotated, // This is the innerHTML of the annotated div, effectively annotated_html
+    grade,
+    detailed_scores,
+    strengths,
+    weaknesses,
+    suggestions
+  } = currentAnalysisData;
+
+  // The 'annotated' variable from currentAnalysisData already contains the HTML content.
+  // The 'grade' variable from currentAnalysisData contains the grade.
+  // No need to re-fetch from DOM if currentAnalysisData is up-to-date.
+  // const annotated_html_from_dom = document.getElementById('annotated').innerHTML;
+  // const grade_from_dom = document.getElementById('grade').value;
+
   const formData = new FormData();
-  formData.append('annotated_html', annotated);
-  formData.append('grade', grade);
+  formData.append('original_essay', original);
+  formData.append('annotated_html', annotated); // Using data from currentAnalysisData
+  formData.append('grade', grade); // Using data from currentAnalysisData
+  formData.append('detailed_scores', JSON.stringify(detailed_scores));
+  formData.append('strengths', strengths);
+  formData.append('weaknesses', weaknesses);
+  formData.append('suggestions', suggestions);
+
+  // Optional: Log FormData entries for verification
+  console.log("FormData for PDF download:");
+  for(var pair of formData.entries()) {
+    console.log(pair[0]+ ': '+ pair[1].substring(0,100) + (pair[1].length > 100 ? "..." : "")); // Log first 100 chars
+  }
 
   fetch('/download', {
     method: 'POST',
