@@ -352,7 +352,7 @@ Now, grade this essay:
         m = re.search(rf'\b{crit}\b\s*[:\-]?\s*(\d{{1,3}})', ai_response, re.I)
         scores[crit.lower()] = m.group(1) if m else "N/A"
 
-    grade_match = re.search(r'\bGrade\b\s*[:\-]?\s*(\d{1,3})\s*/\s*100', ai_response, re.I)
+    grade_match = re.search(r'\bGrade\b\s*[:\-]?\s*(\d{1,3})(?:\s*/\s*100)?', ai_response, re.I)
     grade = grade_match.group(1) if grade_match else "N/A"
 
     return JSONResponse(content={
