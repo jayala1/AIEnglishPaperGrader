@@ -34,7 +34,7 @@ WeasyPrint (for generating PDF reports)
 🔧 Installation<br>
 Download to a folder<br>
 open terminal or cmd for that folder location<br>
-create python enviorment<br>
+create python environment<br>
 pip install fastapi requests weasyprint uvicorn python-multipart<br>
 
 ▶️ Run the App<br>
