@@ -39,3 +39,11 @@ pip install fastapi requests weasyprint uvicorn python-multipart<br>
 
 ▶️ Run the App<br>
 uvicorn main6:app --reload<br>
+
+🧪 **Run Tests**
+Install pytest and execute the test suite:
+
+```bash
+pip install pytest
+pytest
+```
