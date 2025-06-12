@@ -459,8 +459,8 @@ Now, grade this essay strictly following all the rules above:
         detailed_scores[crit.lower()] = m.group(1) if m else "N/A"
 
     # Parse grade (search within the whole response)
-    # Regex: Look for "Grade", optional colon, optional space, digits, slash, 100
-    grade_match = re.search(r'^\s*Grade\s*:\s*(\d{1,3})\s*/\s*100\s*$', ai_response, re.IGNORECASE | re.MULTILINE)
+    # Regex: Look for "Grade", optional colon, optional space, digits, optional /100
+    grade_match = re.search(r'^\s*Grade\s*:\s*(\d{1,3})(?:\s*/\s*100)?\s*$', ai_response, re.IGNORECASE | re.MULTILINE)
     grade = grade_match.group(1) if grade_match else "N/A"
 
     # Parse Strengths, Weaknesses, and Suggestions
